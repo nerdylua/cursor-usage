@@ -3,7 +3,7 @@ import "server-only"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-type UsageRow = {
+type RawUsageRow = {
   date: Date
   isoDate: string
   day: string
@@ -16,10 +16,189 @@ type UsageRow = {
   cacheRead: number
   output: number
   total: number
-  cost: string
+}
+
+type TokenRates = {
+  prompt: number
+  inputCacheRead: number
+  inputCacheWrite: number
+  completion: number
+  sourceModel: string
+  source: string
+}
+
+type UsageRow = RawUsageRow & {
+  rates: TokenRates
+  inputCost: number
+  cacheWriteCost: number
+  cacheReadCost: number
+  outputCost: number
+  estimatedCost: number
 }
 
 export type CursorUsageDashboardData = ReturnType<typeof getCursorUsageDashboard>
+
+const OPENROUTER_MODELS_SOURCE = "https://openrouter.ai/api/v1/models"
+
+const BASE_MODEL_RATES: Record<
+  string,
+  {
+    prompt: number
+    inputCacheRead: number
+    inputCacheWrite: number
+    completion: number
+  }
+> = {
+  "anthropic/claude-sonnet-4": {
+    prompt: 3,
+    inputCacheRead: 0.3,
+    inputCacheWrite: 3.75,
+    completion: 15,
+  },
+  "anthropic/claude-sonnet-4.5": {
+    prompt: 3,
+    inputCacheRead: 0.3,
+    inputCacheWrite: 3.75,
+    completion: 15,
+  },
+  "anthropic/claude-opus-4.5": {
+    prompt: 5,
+    inputCacheRead: 0.5,
+    inputCacheWrite: 6.25,
+    completion: 25,
+  },
+  "anthropic/claude-opus-4.6": {
+    prompt: 5,
+    inputCacheRead: 0.5,
+    inputCacheWrite: 6.25,
+    completion: 25,
+  },
+  "anthropic/claude-opus-4.7": {
+    prompt: 5,
+    inputCacheRead: 0.5,
+    inputCacheWrite: 6.25,
+    completion: 25,
+  },
+  "openai/gpt-5": {
+    prompt: 1.25,
+    inputCacheRead: 0.125,
+    inputCacheWrite: 1.25,
+    completion: 10,
+  },
+  "openai/gpt-5-mini": {
+    prompt: 0.25,
+    inputCacheRead: 0.025,
+    inputCacheWrite: 0.25,
+    completion: 2,
+  },
+  "openai/gpt-5.5": {
+    prompt: 5,
+    inputCacheRead: 0.5,
+    inputCacheWrite: 5,
+    completion: 30,
+  },
+  "openai/gpt-5-codex": {
+    prompt: 1.25,
+    inputCacheRead: 0.125,
+    inputCacheWrite: 1.25,
+    completion: 10,
+  },
+  "openai/gpt-5.1-codex": {
+    prompt: 1.25,
+    inputCacheRead: 0.125,
+    inputCacheWrite: 1.25,
+    completion: 10,
+  },
+  "openai/gpt-5.2-codex": {
+    prompt: 1.75,
+    inputCacheRead: 0.175,
+    inputCacheWrite: 1.75,
+    completion: 14,
+  },
+  "openai/gpt-5.3-codex": {
+    prompt: 1.75,
+    inputCacheRead: 0.175,
+    inputCacheWrite: 1.75,
+    completion: 14,
+  },
+  "openai/gpt-5.4": {
+    prompt: 2.5,
+    inputCacheRead: 0.25,
+    inputCacheWrite: 2.5,
+    completion: 15,
+  },
+  "openai/gpt-5.4-mini": {
+    prompt: 0.75,
+    inputCacheRead: 0.075,
+    inputCacheWrite: 0.75,
+    completion: 4.5,
+  },
+  "openai/gpt-4.1": {
+    prompt: 2,
+    inputCacheRead: 0.5,
+    inputCacheWrite: 2,
+    completion: 8,
+  },
+  "openai/o3": {
+    prompt: 2,
+    inputCacheRead: 0.5,
+    inputCacheWrite: 2,
+    completion: 8,
+  },
+  "google/gemini-3.1-pro-preview": {
+    prompt: 2,
+    inputCacheRead: 0.2,
+    inputCacheWrite: 0.375,
+    completion: 12,
+  },
+  "google/gemini-2.5-pro-preview-05-06": {
+    prompt: 1.25,
+    inputCacheRead: 0.125,
+    inputCacheWrite: 0.375,
+    completion: 10,
+  },
+  "x-ai/grok-3-beta": {
+    prompt: 3,
+    inputCacheRead: 0.75,
+    inputCacheWrite: 3,
+    completion: 15,
+  },
+}
+
+const MODEL_ALIAS_TO_BASE: Record<string, string> = {
+  "claude-4-sonnet-thinking": "anthropic/claude-sonnet-4",
+  "claude-4-sonnet": "anthropic/claude-sonnet-4",
+  "claude-4.5-sonnet-thinking": "anthropic/claude-sonnet-4.5",
+  "claude-3.5-sonnet": "anthropic/claude-sonnet-4",
+  "claude-4.5-opus-high-thinking": "anthropic/claude-opus-4.5",
+  "claude-4.6-opus-max-thinking": "anthropic/claude-opus-4.7",
+  "claude-4.6-opus-high-thinking": "anthropic/claude-opus-4.6",
+  "claude-opus-4-7-thinking-high": "anthropic/claude-opus-4.7",
+  "claude-opus-4-7-thinking-medium": "anthropic/claude-opus-4.7",
+  "gpt-5": "openai/gpt-5",
+  "gpt-5-fast": "openai/gpt-5-mini",
+  "gpt-5.5-medium": "openai/gpt-5.5",
+  "gpt-5.5-low": "openai/gpt-5-mini",
+  "gpt-5-codex-high": "openai/gpt-5-codex",
+  "gpt-5.1-codex-high": "openai/gpt-5.1-codex",
+  "gpt-5.2-codex-xhigh-fast": "openai/gpt-5.2-codex",
+  "gpt-5.3-codex": "openai/gpt-5.3-codex",
+  "gpt-5.3-codex-high": "openai/gpt-5.3-codex",
+  "gpt-5.4-high": "openai/gpt-5.4",
+  "gpt-5.4-medium": "openai/gpt-5.4-mini",
+  "gpt-4.1": "openai/gpt-4.1",
+  o3: "openai/o3",
+  "gemini-3-pro-preview": "google/gemini-3.1-pro-preview",
+  "gemini-2.5-pro-preview-05-06": "google/gemini-2.5-pro-preview-05-06",
+  "grok-3-beta": "x-ai/grok-3-beta",
+}
+
+const BLENDED_RATE_MODELS = new Set([
+  "auto",
+  "composer-1",
+  "composer-1.5",
+  "composer-2-fast",
+])
 
 function parseCsv(text: string) {
   const rows: string[][] = []
@@ -104,13 +283,107 @@ function addMetric<T extends Record<string, number>>(
   map.set(key, current)
 }
 
+function toUsd(tokens: number, usdPerMillionTokens: number) {
+  return (tokens * usdPerMillionTokens) / 1_000_000
+}
+
+function getKnownRates(model: string): TokenRates | null {
+  const sourceModel = MODEL_ALIAS_TO_BASE[model]
+
+  if (!sourceModel) {
+    return null
+  }
+
+  const rates = BASE_MODEL_RATES[sourceModel]
+
+  if (!rates) {
+    return null
+  }
+
+  return {
+    ...rates,
+    sourceModel,
+    source: OPENROUTER_MODELS_SOURCE,
+  }
+}
+
+function buildBlendedRates(rows: RawUsageRow[]): TokenRates {
+  const fallbackBase = BASE_MODEL_RATES["openai/gpt-5"]
+  const weighted = {
+    prompt: { tokens: 0, cost: 0 },
+    inputCacheWrite: { tokens: 0, cost: 0 },
+    inputCacheRead: { tokens: 0, cost: 0 },
+    completion: { tokens: 0, cost: 0 },
+  }
+
+  for (const row of rows) {
+    const rates = getKnownRates(row.model)
+
+    if (!rates) {
+      continue
+    }
+
+    weighted.prompt.tokens += row.inputWithoutCacheWrite
+    weighted.prompt.cost += toUsd(row.inputWithoutCacheWrite, rates.prompt)
+
+    weighted.inputCacheWrite.tokens += row.inputWithCacheWrite
+    weighted.inputCacheWrite.cost += toUsd(
+      row.inputWithCacheWrite,
+      rates.inputCacheWrite
+    )
+
+    weighted.inputCacheRead.tokens += row.cacheRead
+    weighted.inputCacheRead.cost += toUsd(row.cacheRead, rates.inputCacheRead)
+
+    weighted.completion.tokens += row.output
+    weighted.completion.cost += toUsd(row.output, rates.completion)
+  }
+
+  return {
+    prompt:
+      weighted.prompt.tokens > 0
+        ? (weighted.prompt.cost * 1_000_000) / weighted.prompt.tokens
+        : fallbackBase.prompt,
+    inputCacheWrite:
+      weighted.inputCacheWrite.tokens > 0
+        ? (weighted.inputCacheWrite.cost * 1_000_000) /
+          weighted.inputCacheWrite.tokens
+        : fallbackBase.inputCacheWrite,
+    inputCacheRead:
+      weighted.inputCacheRead.tokens > 0
+        ? (weighted.inputCacheRead.cost * 1_000_000) /
+          weighted.inputCacheRead.tokens
+        : fallbackBase.inputCacheRead,
+    completion:
+      weighted.completion.tokens > 0
+        ? (weighted.completion.cost * 1_000_000) / weighted.completion.tokens
+        : fallbackBase.completion,
+    sourceModel: "blended-fallback",
+    source: `${OPENROUTER_MODELS_SOURCE} (weighted from known-model usage)`,
+  }
+}
+
+function resolveRates(model: string, blendedFallbackRates: TokenRates) {
+  const knownRates = getKnownRates(model)
+
+  if (knownRates) {
+    return knownRates
+  }
+
+  if (BLENDED_RATE_MODELS.has(model)) {
+    return blendedFallbackRates
+  }
+
+  return blendedFallbackRates
+}
+
 export function getCursorUsageDashboard() {
   const source = readFileSync(
     join(process.cwd(), "public", "cursor-usage.csv"),
     "utf8"
   )
 
-  const rows: UsageRow[] = parseCsv(source)
+  const rawRows: RawUsageRow[] = parseCsv(source)
     .map((row) => {
       const date = new Date(row.Date)
 
@@ -127,10 +400,31 @@ export function getCursorUsageDashboard() {
         cacheRead: numberValue(row["Cache Read"]),
         output: numberValue(row["Output Tokens"]),
         total: numberValue(row["Total Tokens"]),
-        cost: row.Cost || "Included",
       }
     })
     .filter((row) => Number.isFinite(row.date.valueOf()))
+
+  const blendedFallbackRates = buildBlendedRates(rawRows)
+
+  const rows: UsageRow[] = rawRows
+    .map((row) => {
+      const rates = resolveRates(row.model, blendedFallbackRates)
+      const inputCost = toUsd(row.inputWithoutCacheWrite, rates.prompt)
+      const cacheWriteCost = toUsd(row.inputWithCacheWrite, rates.inputCacheWrite)
+      const cacheReadCost = toUsd(row.cacheRead, rates.inputCacheRead)
+      const outputCost = toUsd(row.output, rates.completion)
+      const estimatedCost = inputCost + cacheWriteCost + cacheReadCost + outputCost
+
+      return {
+        ...row,
+        rates,
+        inputCost,
+        cacheWriteCost,
+        cacheReadCost,
+        outputCost,
+        estimatedCost,
+      }
+    })
     .sort((a, b) => a.date.valueOf() - b.date.valueOf())
 
   const totals = rows.reduce(
@@ -141,6 +435,7 @@ export function getCursorUsageDashboard() {
       acc.output += row.output
       acc.total += row.total
       acc.maxMode += row.maxMode === "Yes" ? row.total : 0
+      acc.cost += row.estimatedCost
       return acc
     },
     {
@@ -150,6 +445,7 @@ export function getCursorUsageDashboard() {
       output: 0,
       total: 0,
       maxMode: 0,
+      cost: 0,
     }
   )
 
@@ -162,9 +458,21 @@ export function getCursorUsageDashboard() {
       output: number
       total: number
       sessions: number
+      cost: number
     }
   >()
-  const models = new Map<string, { total: number; sessions: number }>()
+  const models = new Map<
+    string,
+    {
+      total: number
+      sessions: number
+      estimatedCost: number
+      inputCost: number
+      cacheWriteCost: number
+      cacheReadCost: number
+      outputCost: number
+    }
+  >()
   const kinds = new Map<string, { total: number; sessions: number }>()
   const hours = new Map<string, { total: number; sessions: number }>()
 
@@ -179,6 +487,7 @@ export function getCursorUsageDashboard() {
         output: 0,
         total: 0,
         sessions: 0,
+        cost: 0,
       },
       {
         freshInput: row.inputWithoutCacheWrite,
@@ -187,13 +496,30 @@ export function getCursorUsageDashboard() {
         output: row.output,
         total: row.total,
         sessions: 1,
+        cost: row.estimatedCost,
       }
     )
     addMetric(
       models,
       compactModel(row.model),
-      { total: 0, sessions: 0 },
-      { total: row.total, sessions: 1 }
+      {
+        total: 0,
+        sessions: 0,
+        estimatedCost: 0,
+        inputCost: 0,
+        cacheWriteCost: 0,
+        cacheReadCost: 0,
+        outputCost: 0,
+      },
+      {
+        total: row.total,
+        sessions: 1,
+        estimatedCost: row.estimatedCost,
+        inputCost: row.inputCost,
+        cacheWriteCost: row.cacheWriteCost,
+        cacheReadCost: row.cacheReadCost,
+        outputCost: row.outputCost,
+      }
     )
     addMetric(
       kinds,
@@ -214,6 +540,13 @@ export function getCursorUsageDashboard() {
       model,
       tokens: value.total,
       sessions: value.sessions,
+      estimatedCost: value.estimatedCost,
+      inputCost: value.inputCost,
+      cacheWriteCost: value.cacheWriteCost,
+      cacheReadCost: value.cacheReadCost,
+      outputCost: value.outputCost,
+      costPerMillionTokens:
+        (value.estimatedCost / Math.max(1, value.total)) * 1_000_000,
     }))
     .sort((a, b) => b.tokens - a.tokens)
 
@@ -222,14 +555,43 @@ export function getCursorUsageDashboard() {
     (acc, item) => {
       acc.tokens += item.tokens
       acc.sessions += item.sessions
+      acc.estimatedCost += item.estimatedCost
+      acc.inputCost += item.inputCost
+      acc.cacheWriteCost += item.cacheWriteCost
+      acc.cacheReadCost += item.cacheReadCost
+      acc.outputCost += item.outputCost
       return acc
     },
-    { model: "Other", tokens: 0, sessions: 0 }
+    {
+      model: "Other",
+      tokens: 0,
+      sessions: 0,
+      estimatedCost: 0,
+      inputCost: 0,
+      cacheWriteCost: 0,
+      cacheReadCost: 0,
+      outputCost: 0,
+      costPerMillionTokens: 0,
+    }
   )
+  otherModels.costPerMillionTokens =
+    (otherModels.estimatedCost / Math.max(1, otherModels.tokens)) * 1_000_000
 
+  let cumulativeCost = 0
   const days = [...daily.entries()]
-    .map(([date, value]) => ({ date, ...value }))
+    .map(([date, value]) => ({
+      date,
+      ...value,
+      dailyCost: value.cost,
+    }))
     .sort((a, b) => a.date.localeCompare(b.date))
+    .map((entry) => {
+      cumulativeCost += entry.dailyCost
+      return {
+        ...entry,
+        cumulativeCost,
+      }
+    })
 
   const peakDay = days.toSorted((a, b) => b.total - a.total)[0]
   const busiestHours = [...hours.entries()]
@@ -272,6 +634,8 @@ export function getCursorUsageDashboard() {
       cacheRead: row.cacheRead,
       output: row.output,
       maxMode: row.maxMode,
+      estimatedCost: row.estimatedCost,
+      pricingModel: row.rates.sourceModel,
     }))
 
   const cacheEfficiency =
@@ -279,6 +643,7 @@ export function getCursorUsageDashboard() {
     Math.max(1, totals.cacheRead + totals.inputWithoutCacheWrite)
   const outputShare = totals.output / Math.max(1, totals.total)
   const maxModeShare = totals.maxMode / Math.max(1, totals.total)
+  const costPerMillionTokens = (totals.cost / Math.max(1, totals.total)) * 1_000_000
 
   return {
     range: {
@@ -289,6 +654,8 @@ export function getCursorUsageDashboard() {
     kpis: {
       rows: rows.length,
       totalTokens: totals.total,
+      totalCost: totals.cost,
+      costPerMillionTokens,
       cacheEfficiency,
       outputShare,
       maxModeShare,

@@ -5,6 +5,8 @@ import {
   Activity,
   Bot,
   CalendarRange,
+  CircleHelp,
+  DollarSign,
   Download,
   Gauge,
   LayoutDashboard,
@@ -23,6 +25,7 @@ import {
   ComposedChart,
   Label,
   Line,
+  LineChart as RechartsLineChart,
   Pie,
   PieChart,
   XAxis,
@@ -48,6 +51,12 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -70,7 +79,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { TooltipProvider } from "@/components/ui/tooltip"
 import type { CursorUsageDashboardData } from "@/lib/cursor-usage"
 
 const tokenFlowConfig = {
@@ -125,6 +133,13 @@ const compositionConfig = {
   },
 } satisfies ChartConfig
 
+const costConfig = {
+  cumulativeCost: {
+    label: "Cumulative cost",
+    color: "var(--chart-4)",
+  },
+} satisfies ChartConfig
+
 const modelPalette = [
   "var(--chart-2)",
   "var(--chart-1)",
@@ -133,8 +148,12 @@ const modelPalette = [
   "var(--chart-4)",
 ]
 
-const cursorExportUrl =
-  "https://cursor.com/api/dashboard/export-usage-events-csv?startDate=1704997800000&endDate=1777746599999&strategy=tokens"
+function getCursorExportUrl() {
+  const today = new Date()
+  today.setUTCHours(23, 59, 59, 999)
+  const endDate = today.getTime()
+  return `https://cursor.com/api/dashboard/export-usage-events-csv?startDate=1704997800000&endDate=${endDate}&strategy=tokens`
+}
 
 function compactNumber(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -151,6 +170,23 @@ function percent(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "percent",
     maximumFractionDigits: 1,
+  }).format(value)
+}
+
+function currency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: value >= 1 ? 2 : 4,
+  }).format(value)
+}
+
+function compactCurrency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 2,
   }).format(value)
 }
 
@@ -220,7 +256,7 @@ function ChartCard({
 }: {
   children: React.ReactNode
   description: string
-  title: string
+  title: React.ReactNode
   className?: string
 }) {
   return (
@@ -264,6 +300,7 @@ export function CursorUsageDashboard({
                   {[
                     ["Overview", LayoutDashboard],
                     ["Token Flow", LineChart],
+                    ["Cost", DollarSign],
                     ["Models", Bot],
                     ["Sessions", Activity],
                   ].map(([label, Icon]) => (
@@ -315,66 +352,66 @@ export function CursorUsageDashboard({
                         >
                           {compactNumber(data.kpis.totalTokens)}
                         </Badge>
+                        <Badge
+                          variant="outline"
+                          className="rounded-lg border-border/70 bg-muted/40"
+                        >
+                          {compactCurrency(data.kpis.totalCost)}
+                        </Badge>
                       </div>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        A focused read on cache leverage, model load, and peak
-                        token sessions.
+                        A token and cost timeline across model usage, cache
+                        activity, and peak sessions.
                       </p>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      asChild
-                      className="rounded-lg"
-                      size="sm"
-                      variant="outline"
-                    >
-                      <a
-                        href={cursorExportUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Download className="size-4" />
-                        <span className="hidden sm:inline">CSV</span>
-                      </a>
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          asChild
+                          className="rounded-lg"
+                          size="sm"
+                          variant="outline"
+                        >
+                          <a
+                            href={getCursorExportUrl()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Download className="size-4" />
+                            <span className="hidden sm:inline">CSV</span>
+                          </a>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-80">
+                        Click to download CSV. If you want the latest data,
+                        replace <code>public/cursor-usage.csv</code> with the
+                        downloaded file.
+                      </TooltipContent>
+                    </Tooltip>
                     <ThemeToggle />
                   </div>
                 </div>
               </header>
 
-              <section className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
-                <div className="dashboard-card p-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="rounded-lg border-primary/25 bg-primary/10 text-primary"
-                    >
-                      Static CSV
-                    </Badge>
-                    <Badge variant="outline" className="rounded-lg bg-card/70">
-                      {formatDate(data.range.start)} to{" "}
-                      {formatDate(data.range.end)}
-                    </Badge>
-                  </div>
-                  <div className="mt-6 max-w-3xl">
-                    <p className="font-heading text-3xl font-semibold tracking-normal text-foreground sm:text-4xl">
-                      Most of the workload is cache reuse, with output now
-                      tracked on its own scale.
-                    </p>
-                    <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-                      The charts separate reused context, fresh input, cache
-                      writes, and generated tokens so the smaller signals stay
-                      readable instead of disappearing into the token mass.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="dashboard-card p-5">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Billing shape
+              <section className="dashboard-card flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="mr-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Session mix
                   </p>
-                  <div className="mt-4 space-y-3">
+                  <Badge
+                    variant="outline"
+                    className="rounded-lg border-primary/25 bg-primary/10 text-primary"
+                  >
+                    Static CSV
+                  </Badge>
+                  <Badge variant="outline" className="rounded-lg bg-card/70">
+                    {formatDate(data.range.start)} to{" "}
+                    {formatDate(data.range.end)}
+                  </Badge>
+                </div>
+                <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-3 lg:max-w-3xl">
                     {data.kindBreakdown.slice(0, 3).map((kind) => (
                       <div key={kind.kind}>
                         <div className="flex items-center justify-between gap-3 text-sm">
@@ -396,14 +433,20 @@ export function CursorUsageDashboard({
                         </div>
                       </div>
                     ))}
-                  </div>
                 </div>
               </section>
 
               <section
                 id="overview"
-                className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+                className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"
               >
+                <KpiCard
+                  icon={DollarSign}
+                  label="Estimated cost"
+                  value={compactCurrency(data.kpis.totalCost)}
+                  detail={`${currency(data.kpis.costPerMillionTokens)} per 1M tokens`}
+                  tone="var(--chart-4)"
+                />
                 <KpiCard
                   icon={Zap}
                   label="Total tokens"
@@ -440,118 +483,118 @@ export function CursorUsageDashboard({
                   title="Daily token flow"
                   description="Cache and input volume on the left axis, generated output on its own right axis."
                 >
-                    <ChartContainer
-                      config={tokenFlowConfig}
-                      className="h-[340px] w-full"
-                    >
-                      <ComposedChart data={data.daily} accessibilityLayer>
-                        <defs>
-                          <linearGradient id="cacheReadFill" x1="0" x2="0" y1="0" y2="1">
-                            <stop
-                              offset="5%"
-                              stopColor="var(--color-cacheRead)"
-                              stopOpacity={0.36}
-                            />
-                            <stop
-                              offset="95%"
-                              stopColor="var(--color-cacheRead)"
-                              stopOpacity={0.02}
-                            />
-                          </linearGradient>
-                          <linearGradient id="freshInputFill" x1="0" x2="0" y1="0" y2="1">
-                            <stop
-                              offset="5%"
-                              stopColor="var(--color-freshInput)"
-                              stopOpacity={0.24}
-                            />
-                            <stop
-                              offset="95%"
-                              stopColor="var(--color-freshInput)"
-                              stopOpacity={0.01}
-                            />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid
-                          vertical={false}
-                          strokeDasharray="3 6"
-                          strokeOpacity={0.55}
-                        />
-                        <XAxis
-                          dataKey="date"
-                          minTickGap={28}
-                          tickFormatter={formatDate}
-                          tickLine={false}
-                          axisLine={false}
-                          tickMargin={12}
-                        />
-                        <YAxis
-                          yAxisId="tokens"
-                          tickFormatter={compactNumber}
-                          tickLine={false}
-                          axisLine={false}
-                          width={54}
-                        />
-                        <YAxis
-                          yAxisId="output"
-                          orientation="right"
-                          tickFormatter={compactNumber}
-                          tickLine={false}
-                          axisLine={false}
-                          width={46}
-                          stroke="var(--color-output)"
-                        />
-                        <ChartTooltip
-                          content={
-                            <ChartTooltipContent
-                              labelFormatter={(value) =>
-                                new Intl.DateTimeFormat("en-US", {
-                                  month: "long",
-                                  day: "numeric",
-                                  year: "numeric",
-                                  timeZone: "UTC",
-                                }).format(new Date(String(value)))
-                              }
-                            />
-                          }
-                        />
-                        <ChartLegend content={<ChartLegendContent />} />
-                        <Area
-                          yAxisId="tokens"
-                          dataKey="cacheRead"
-                          type="monotone"
-                          fill="url(#cacheReadFill)"
-                          stroke="var(--color-cacheRead)"
-                          strokeWidth={2.5}
-                          dot={false}
-                        />
-                        <Area
-                          yAxisId="tokens"
-                          dataKey="freshInput"
-                          type="monotone"
-                          fill="url(#freshInputFill)"
-                          stroke="var(--color-freshInput)"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                        <Line
-                          yAxisId="tokens"
-                          dataKey="cacheWrite"
-                          type="monotone"
-                          stroke="var(--color-cacheWrite)"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                        <Line
-                          yAxisId="output"
-                          dataKey="output"
-                          type="monotone"
-                          stroke="var(--color-output)"
-                          strokeWidth={3}
-                          dot={false}
-                          activeDot={{ r: 4 }}
-                        />
-                      </ComposedChart>
-                    </ChartContainer>
+                  <ChartContainer
+                    config={tokenFlowConfig}
+                    className="h-[340px] w-full"
+                  >
+                    <ComposedChart data={data.daily} accessibilityLayer>
+                      <defs>
+                        <linearGradient id="cacheReadFill" x1="0" x2="0" y1="0" y2="1">
+                          <stop
+                            offset="5%"
+                            stopColor="var(--color-cacheRead)"
+                            stopOpacity={0.36}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="var(--color-cacheRead)"
+                            stopOpacity={0.02}
+                          />
+                        </linearGradient>
+                        <linearGradient id="freshInputFill" x1="0" x2="0" y1="0" y2="1">
+                          <stop
+                            offset="5%"
+                            stopColor="var(--color-freshInput)"
+                            stopOpacity={0.24}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="var(--color-freshInput)"
+                            stopOpacity={0.01}
+                          />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid
+                        vertical={false}
+                        strokeDasharray="3 6"
+                        strokeOpacity={0.55}
+                      />
+                      <XAxis
+                        dataKey="date"
+                        minTickGap={28}
+                        tickFormatter={formatDate}
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={12}
+                      />
+                      <YAxis
+                        yAxisId="tokens"
+                        tickFormatter={compactNumber}
+                        tickLine={false}
+                        axisLine={false}
+                        width={54}
+                      />
+                      <YAxis
+                        yAxisId="output"
+                        orientation="right"
+                        tickFormatter={compactNumber}
+                        tickLine={false}
+                        axisLine={false}
+                        width={46}
+                        stroke="var(--color-output)"
+                      />
+                      <ChartTooltip
+                        content={
+                          <ChartTooltipContent
+                            labelFormatter={(value) =>
+                              new Intl.DateTimeFormat("en-US", {
+                                month: "long",
+                                day: "numeric",
+                                year: "numeric",
+                                timeZone: "UTC",
+                              }).format(new Date(String(value)))
+                            }
+                          />
+                        }
+                      />
+                      <ChartLegend content={<ChartLegendContent />} />
+                      <Area
+                        yAxisId="tokens"
+                        dataKey="cacheRead"
+                        type="monotone"
+                        fill="url(#cacheReadFill)"
+                        stroke="var(--color-cacheRead)"
+                        strokeWidth={2.5}
+                        dot={false}
+                      />
+                      <Area
+                        yAxisId="tokens"
+                        dataKey="freshInput"
+                        type="monotone"
+                        fill="url(#freshInputFill)"
+                        stroke="var(--color-freshInput)"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        yAxisId="tokens"
+                        dataKey="cacheWrite"
+                        type="monotone"
+                        stroke="var(--color-cacheWrite)"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        yAxisId="output"
+                        dataKey="output"
+                        type="monotone"
+                        stroke="var(--color-output)"
+                        strokeWidth={3}
+                        dot={false}
+                        activeDot={{ r: 4 }}
+                      />
+                    </ComposedChart>
+                  </ChartContainer>
                 </ChartCard>
 
                 <ChartCard
@@ -636,11 +679,83 @@ export function CursorUsageDashboard({
                 </ChartCard>
               </section>
 
+              <section id="cost">
+                <ChartCard
+                  title="Cumulative estimated cost"
+                  description="Running spend estimate from OpenRouter model pricing, with blended fallback rates for router aliases."
+                >
+                  <ChartContainer config={costConfig} className="h-[300px] w-full">
+                    <RechartsLineChart data={data.daily} accessibilityLayer>
+                      <CartesianGrid
+                        vertical={false}
+                        strokeDasharray="3 6"
+                        strokeOpacity={0.5}
+                      />
+                      <XAxis
+                        dataKey="date"
+                        minTickGap={28}
+                        tickFormatter={formatDate}
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={10}
+                      />
+                      <YAxis
+                        tickFormatter={compactCurrency}
+                        tickLine={false}
+                        axisLine={false}
+                        width={84}
+                      />
+                      <ChartTooltip
+                        content={
+                          <ChartTooltipContent
+                            formatter={(value) => currency(Number(value) || 0)}
+                            labelFormatter={(value) =>
+                              new Intl.DateTimeFormat("en-US", {
+                                month: "long",
+                                day: "numeric",
+                                year: "numeric",
+                                timeZone: "UTC",
+                              }).format(new Date(String(value)))
+                            }
+                          />
+                        }
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="cumulativeCost"
+                        stroke="var(--color-cumulativeCost)"
+                        strokeWidth={2.75}
+                        dot={false}
+                      />
+                    </RechartsLineChart>
+                  </ChartContainer>
+                </ChartCard>
+              </section>
+
               <section id="models" className="grid gap-4 xl:grid-cols-5">
                 <ChartCard
                   className="xl:col-span-3"
-                  title="Model mix"
-                  description="The largest token consumers, grouped by model family."
+                  title={
+                    <span className="inline-flex items-center gap-1.5">
+                      Model mix
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label="Model cost metrics info"
+                            className="inline-flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            <CircleHelp className="size-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-72">
+                          Hover a bar to view its estimated cost, cost per 1M
+                          tokens, and token-cost breakdown.
+                        </TooltipContent>
+                      </Tooltip>
+                    </span>
+                  }
+                  description="The largest token consumers, grouped by model family with estimated spend."
                 >
                     <ChartContainer
                       config={modelConfig}
@@ -668,7 +783,73 @@ export function CursorUsageDashboard({
                           axisLine={false}
                           width={48}
                         />
-                        <ChartTooltip content={<ChartTooltipContent />} />
+                        <ChartTooltip
+                          content={
+                            <ChartTooltipContent
+                              formatter={(_value, _name, item) => {
+                                const payload = item?.payload as
+                                  | {
+                                      tokens: number
+                                      sessions: number
+                                      estimatedCost: number
+                                      inputCost: number
+                                      cacheWriteCost: number
+                                      cacheReadCost: number
+                                      outputCost: number
+                                      costPerMillionTokens: number
+                                    }
+                                  | undefined
+
+                                if (!payload) {
+                                  return null
+                                }
+
+                                return (
+                                  <div className="grid gap-1.5">
+                                    <div className="flex items-center justify-between gap-5">
+                                      <span className="text-muted-foreground">
+                                        Tokens
+                                      </span>
+                                      <span className="font-mono">
+                                        {integer(payload.tokens)}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-5">
+                                      <span className="text-muted-foreground">
+                                        Sessions
+                                      </span>
+                                      <span className="font-mono">
+                                        {integer(payload.sessions)}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-5">
+                                      <span className="text-muted-foreground">
+                                        Est. cost
+                                      </span>
+                                      <span className="font-mono">
+                                        {currency(payload.estimatedCost)}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-5">
+                                      <span className="text-muted-foreground">
+                                        Cost / 1M
+                                      </span>
+                                      <span className="font-mono">
+                                        {currency(payload.costPerMillionTokens)}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 border-t border-border/60 pt-1 text-[11px] text-muted-foreground">
+                                      In: {currency(payload.inputCost)} · Write:{" "}
+                                      {currency(payload.cacheWriteCost)} · Read:{" "}
+                                      {currency(payload.cacheReadCost)} · Out:{" "}
+                                      {currency(payload.outputCost)}
+                                    </div>
+                                  </div>
+                                )
+                              }}
+                            />
+                          }
+                        />
                         <Bar dataKey="tokens" radius={[7, 7, 2, 2]}>
                           {data.modelMix.map((entry, index) => (
                             <Cell
