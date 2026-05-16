@@ -150,7 +150,7 @@ const modelPalette = [
 
 function getCursorExportUrl() {
   const today = new Date()
-  today.setUTCHours(23, 59, 59, 999)
+  today.setHours(23, 59, 59, 999)
   const endDate = today.getTime()
   return `https://cursor.com/api/dashboard/export-usage-events-csv?startDate=1704997800000&endDate=${endDate}&strategy=tokens`
 }
