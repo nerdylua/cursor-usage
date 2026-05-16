@@ -18,11 +18,21 @@ type RawUsageRow = {
   total: number
 }
 
-type TokenRates = {
+type BaseTokenRates = {
   prompt: number
   inputCacheRead: number
   inputCacheWrite: number
   completion: number
+  highContext?: {
+    inputTokensAbove: number
+    prompt: number
+    inputCacheRead: number
+    inputCacheWrite: number
+    completion: number
+  }
+}
+
+type TokenRates = BaseTokenRates & {
   sourceModel: string
   source: string
 }
@@ -40,26 +50,32 @@ export type CursorUsageDashboardData = ReturnType<typeof getCursorUsageDashboard
 
 const OPENROUTER_MODELS_SOURCE = "https://openrouter.ai/api/v1/models"
 
-const BASE_MODEL_RATES: Record<
-  string,
-  {
-    prompt: number
-    inputCacheRead: number
-    inputCacheWrite: number
-    completion: number
-  }
-> = {
+const BASE_MODEL_RATES: Record<string, BaseTokenRates> = {
   "anthropic/claude-sonnet-4": {
     prompt: 3,
     inputCacheRead: 0.3,
     inputCacheWrite: 3.75,
     completion: 15,
+    highContext: {
+      inputTokensAbove: 200_000,
+      prompt: 6,
+      inputCacheRead: 0.6,
+      inputCacheWrite: 7.5,
+      completion: 22.5,
+    },
   },
   "anthropic/claude-sonnet-4.5": {
     prompt: 3,
     inputCacheRead: 0.3,
     inputCacheWrite: 3.75,
     completion: 15,
+    highContext: {
+      inputTokensAbove: 200_000,
+      prompt: 6,
+      inputCacheRead: 0.6,
+      inputCacheWrite: 7.5,
+      completion: 22.5,
+    },
   },
   "anthropic/claude-opus-4.5": {
     prompt: 5,
@@ -96,6 +112,13 @@ const BASE_MODEL_RATES: Record<
     inputCacheRead: 0.5,
     inputCacheWrite: 5,
     completion: 30,
+    highContext: {
+      inputTokensAbove: 272_000,
+      prompt: 10,
+      inputCacheRead: 1,
+      inputCacheWrite: 10,
+      completion: 45,
+    },
   },
   "openai/gpt-5-codex": {
     prompt: 1.25,
@@ -171,21 +194,22 @@ const MODEL_ALIAS_TO_BASE: Record<string, string> = {
   "claude-4.5-sonnet-thinking": "anthropic/claude-sonnet-4.5",
   "claude-3.5-sonnet": "anthropic/claude-sonnet-4",
   "claude-4.5-opus-high-thinking": "anthropic/claude-opus-4.5",
-  "claude-4.6-opus-max-thinking": "anthropic/claude-opus-4.7",
+  "claude-4.6-opus-max-thinking": "anthropic/claude-opus-4.6",
   "claude-4.6-opus-high-thinking": "anthropic/claude-opus-4.6",
   "claude-opus-4-7-thinking-high": "anthropic/claude-opus-4.7",
+  "claude-opus-4-7-thinking-xhigh": "anthropic/claude-opus-4.7",
   "claude-opus-4-7-thinking-medium": "anthropic/claude-opus-4.7",
   "gpt-5": "openai/gpt-5",
   "gpt-5-fast": "openai/gpt-5-mini",
   "gpt-5.5-medium": "openai/gpt-5.5",
-  "gpt-5.5-low": "openai/gpt-5-mini",
+  "gpt-5.5-low": "openai/gpt-5.5",
   "gpt-5-codex-high": "openai/gpt-5-codex",
   "gpt-5.1-codex-high": "openai/gpt-5.1-codex",
   "gpt-5.2-codex-xhigh-fast": "openai/gpt-5.2-codex",
   "gpt-5.3-codex": "openai/gpt-5.3-codex",
   "gpt-5.3-codex-high": "openai/gpt-5.3-codex",
   "gpt-5.4-high": "openai/gpt-5.4",
-  "gpt-5.4-medium": "openai/gpt-5.4-mini",
+  "gpt-5.4-medium": "openai/gpt-5.4",
   "gpt-4.1": "openai/gpt-4.1",
   o3: "openai/o3",
   "gemini-3-pro-preview": "google/gemini-3.1-pro-preview",
@@ -377,6 +401,25 @@ function resolveRates(model: string, blendedFallbackRates: TokenRates) {
   return blendedFallbackRates
 }
 
+function resolveRowRates(row: RawUsageRow, blendedFallbackRates: TokenRates) {
+  const rates = resolveRates(row.model, blendedFallbackRates)
+  const inputTokens =
+    row.inputWithCacheWrite + row.inputWithoutCacheWrite + row.cacheRead
+
+  if (rates.highContext && inputTokens > rates.highContext.inputTokensAbove) {
+    return {
+      ...rates,
+      prompt: rates.highContext.prompt,
+      inputCacheRead: rates.highContext.inputCacheRead,
+      inputCacheWrite: rates.highContext.inputCacheWrite,
+      completion: rates.highContext.completion,
+      sourceModel: `${rates.sourceModel} >${rates.highContext.inputTokensAbove.toLocaleString("en-US")} input tokens`,
+    }
+  }
+
+  return rates
+}
+
 export function getCursorUsageDashboard() {
   const source = readFileSync(
     join(process.cwd(), "public", "cursor-usage.csv"),
@@ -408,7 +451,7 @@ export function getCursorUsageDashboard() {
 
   const rows: UsageRow[] = rawRows
     .map((row) => {
-      const rates = resolveRates(row.model, blendedFallbackRates)
+      const rates = resolveRowRates(row, blendedFallbackRates)
       const inputCost = toUsd(row.inputWithoutCacheWrite, rates.prompt)
       const cacheWriteCost = toUsd(row.inputWithCacheWrite, rates.inputCacheWrite)
       const cacheReadCost = toUsd(row.cacheRead, rates.inputCacheRead)
