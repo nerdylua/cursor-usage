@@ -23,13 +23,6 @@ const BASE_MODEL_RATES = {
     inputCacheRead: 0.3,
     inputCacheWrite: 3.75,
     completion: 15,
-    highContext: {
-      inputTokensAbove: 200_000,
-      prompt: 6,
-      inputCacheRead: 0.6,
-      inputCacheWrite: 7.5,
-      completion: 22.5,
-    },
   },
   "anthropic/claude-opus-4.5": {
     prompt: 5,
