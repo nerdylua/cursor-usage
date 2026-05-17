@@ -48,7 +48,7 @@ type UsageRow = RawUsageRow & {
 
 export type CursorUsageDashboardData = ReturnType<typeof getCursorUsageDashboard>
 
-const OPENROUTER_MODELS_SOURCE = "https://openrouter.ai/api/v1/models"
+const CURSOR_MODELS_SOURCE = "https://cursor.com/docs/models-and-pricing"
 
 const BASE_MODEL_RATES: Record<string, BaseTokenRates> = {
   "anthropic/claude-sonnet-4": {
@@ -101,6 +101,12 @@ const BASE_MODEL_RATES: Record<string, BaseTokenRates> = {
     inputCacheWrite: 1.25,
     completion: 10,
   },
+  "openai/gpt-5-fast": {
+    prompt: 2.5,
+    inputCacheRead: 0.25,
+    inputCacheWrite: 2.5,
+    completion: 20,
+  },
   "openai/gpt-5-mini": {
     prompt: 0.25,
     inputCacheRead: 0.025,
@@ -117,7 +123,7 @@ const BASE_MODEL_RATES: Record<string, BaseTokenRates> = {
       prompt: 10,
       inputCacheRead: 1,
       inputCacheWrite: 10,
-      completion: 45,
+      completion: 30,
     },
   },
   "openai/gpt-5-codex": {
@@ -149,6 +155,13 @@ const BASE_MODEL_RATES: Record<string, BaseTokenRates> = {
     inputCacheRead: 0.25,
     inputCacheWrite: 2.5,
     completion: 15,
+    highContext: {
+      inputTokensAbove: 272_000,
+      prompt: 5,
+      inputCacheRead: 0.5,
+      inputCacheWrite: 5,
+      completion: 15,
+    },
   },
   "openai/gpt-5.4-mini": {
     prompt: 0.75,
@@ -186,6 +199,30 @@ const BASE_MODEL_RATES: Record<string, BaseTokenRates> = {
     inputCacheWrite: 3,
     completion: 15,
   },
+  "cursor/auto": {
+    prompt: 1.25,
+    inputCacheRead: 0.25,
+    inputCacheWrite: 1.25,
+    completion: 6,
+  },
+  "cursor/composer-1": {
+    prompt: 1.25,
+    inputCacheRead: 0.125,
+    inputCacheWrite: 1.25,
+    completion: 10,
+  },
+  "cursor/composer-1.5": {
+    prompt: 3.5,
+    inputCacheRead: 0.35,
+    inputCacheWrite: 3.5,
+    completion: 17.5,
+  },
+  "cursor/composer-2": {
+    prompt: 0.5,
+    inputCacheRead: 0.2,
+    inputCacheWrite: 0.5,
+    completion: 2.5,
+  },
 }
 
 const MODEL_ALIAS_TO_BASE: Record<string, string> = {
@@ -200,8 +237,11 @@ const MODEL_ALIAS_TO_BASE: Record<string, string> = {
   "claude-opus-4-7-thinking-xhigh": "anthropic/claude-opus-4.7",
   "claude-opus-4-7-thinking-medium": "anthropic/claude-opus-4.7",
   "gpt-5": "openai/gpt-5",
-  "gpt-5-fast": "openai/gpt-5-mini",
+  "gpt-5-fast": "openai/gpt-5-fast",
+  "gpt-5-high-fast": "openai/gpt-5-fast",
+  "gpt-5-low-fast": "openai/gpt-5-fast",
   "gpt-5.5-medium": "openai/gpt-5.5",
+  "gpt-5.5-high": "openai/gpt-5.5",
   "gpt-5.5-low": "openai/gpt-5.5",
   "gpt-5-codex-high": "openai/gpt-5-codex",
   "gpt-5.1-codex-high": "openai/gpt-5.1-codex",
@@ -215,14 +255,11 @@ const MODEL_ALIAS_TO_BASE: Record<string, string> = {
   "gemini-3-pro-preview": "google/gemini-3.1-pro-preview",
   "gemini-2.5-pro-preview-05-06": "google/gemini-2.5-pro-preview-05-06",
   "grok-3-beta": "x-ai/grok-3-beta",
+  auto: "cursor/auto",
+  "composer-1": "cursor/composer-1",
+  "composer-1.5": "cursor/composer-1.5",
+  "composer-2-fast": "cursor/composer-2",
 }
-
-const BLENDED_RATE_MODELS = new Set([
-  "auto",
-  "composer-1",
-  "composer-1.5",
-  "composer-2-fast",
-])
 
 function parseCsv(text: string) {
   const rows: string[][] = []
@@ -327,7 +364,7 @@ function getKnownRates(model: string): TokenRates | null {
   return {
     ...rates,
     sourceModel,
-    source: OPENROUTER_MODELS_SOURCE,
+    source: CURSOR_MODELS_SOURCE,
   }
 }
 
@@ -383,7 +420,7 @@ function buildBlendedRates(rows: RawUsageRow[]): TokenRates {
         ? (weighted.completion.cost * 1_000_000) / weighted.completion.tokens
         : fallbackBase.completion,
     sourceModel: "blended-fallback",
-    source: `${OPENROUTER_MODELS_SOURCE} (weighted from known-model usage)`,
+    source: `${CURSOR_MODELS_SOURCE} (weighted from known-model usage)`,
   }
 }
 
@@ -392,10 +429,6 @@ function resolveRates(model: string, blendedFallbackRates: TokenRates) {
 
   if (knownRates) {
     return knownRates
-  }
-
-  if (BLENDED_RATE_MODELS.has(model)) {
-    return blendedFallbackRates
   }
 
   return blendedFallbackRates

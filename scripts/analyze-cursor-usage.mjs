@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
 const sourcePath = join(process.cwd(), "public", "cursor-usage.csv")
-const OPENROUTER_MODELS_SOURCE = "https://openrouter.ai/api/v1/models"
+const CURSOR_MODELS_SOURCE = "https://cursor.com/docs/models-and-pricing"
 
 const BASE_MODEL_RATES = {
   "anthropic/claude-sonnet-4": {
@@ -55,6 +55,12 @@ const BASE_MODEL_RATES = {
     inputCacheWrite: 1.25,
     completion: 10,
   },
+  "openai/gpt-5-fast": {
+    prompt: 2.5,
+    inputCacheRead: 0.25,
+    inputCacheWrite: 2.5,
+    completion: 20,
+  },
   "openai/gpt-5-mini": {
     prompt: 0.25,
     inputCacheRead: 0.025,
@@ -71,7 +77,7 @@ const BASE_MODEL_RATES = {
       prompt: 10,
       inputCacheRead: 1,
       inputCacheWrite: 10,
-      completion: 45,
+      completion: 30,
     },
   },
   "openai/gpt-5-codex": {
@@ -103,6 +109,13 @@ const BASE_MODEL_RATES = {
     inputCacheRead: 0.25,
     inputCacheWrite: 2.5,
     completion: 15,
+    highContext: {
+      inputTokensAbove: 272_000,
+      prompt: 5,
+      inputCacheRead: 0.5,
+      inputCacheWrite: 5,
+      completion: 15,
+    },
   },
   "openai/gpt-5.4-mini": {
     prompt: 0.75,
@@ -140,6 +153,30 @@ const BASE_MODEL_RATES = {
     inputCacheWrite: 3,
     completion: 15,
   },
+  "cursor/auto": {
+    prompt: 1.25,
+    inputCacheRead: 0.25,
+    inputCacheWrite: 1.25,
+    completion: 6,
+  },
+  "cursor/composer-1": {
+    prompt: 1.25,
+    inputCacheRead: 0.125,
+    inputCacheWrite: 1.25,
+    completion: 10,
+  },
+  "cursor/composer-1.5": {
+    prompt: 3.5,
+    inputCacheRead: 0.35,
+    inputCacheWrite: 3.5,
+    completion: 17.5,
+  },
+  "cursor/composer-2": {
+    prompt: 0.5,
+    inputCacheRead: 0.2,
+    inputCacheWrite: 0.5,
+    completion: 2.5,
+  },
 }
 
 const MODEL_ALIAS_TO_BASE = {
@@ -154,8 +191,11 @@ const MODEL_ALIAS_TO_BASE = {
   "claude-opus-4-7-thinking-xhigh": "anthropic/claude-opus-4.7",
   "claude-opus-4-7-thinking-medium": "anthropic/claude-opus-4.7",
   "gpt-5": "openai/gpt-5",
-  "gpt-5-fast": "openai/gpt-5-mini",
+  "gpt-5-fast": "openai/gpt-5-fast",
+  "gpt-5-high-fast": "openai/gpt-5-fast",
+  "gpt-5-low-fast": "openai/gpt-5-fast",
   "gpt-5.5-medium": "openai/gpt-5.5",
+  "gpt-5.5-high": "openai/gpt-5.5",
   "gpt-5.5-low": "openai/gpt-5.5",
   "gpt-5-codex-high": "openai/gpt-5-codex",
   "gpt-5.1-codex-high": "openai/gpt-5.1-codex",
@@ -169,6 +209,10 @@ const MODEL_ALIAS_TO_BASE = {
   "gemini-3-pro-preview": "google/gemini-3.1-pro-preview",
   "gemini-2.5-pro-preview-05-06": "google/gemini-2.5-pro-preview-05-06",
   "grok-3-beta": "x-ai/grok-3-beta",
+  auto: "cursor/auto",
+  "composer-1": "cursor/composer-1",
+  "composer-1.5": "cursor/composer-1.5",
+  "composer-2-fast": "cursor/composer-2",
 }
 
 function parseCsv(text) {
@@ -253,7 +297,7 @@ function getKnownRates(model) {
   return {
     ...rates,
     sourceModel,
-    source: OPENROUTER_MODELS_SOURCE,
+    source: CURSOR_MODELS_SOURCE,
   }
 }
 
@@ -357,7 +401,7 @@ const blendedFallbackRates = {
       ? (blended.completion.cost * 1_000_000) / blended.completion.tokens
       : defaultRates.completion,
   sourceModel: "blended-fallback",
-  source: `${OPENROUTER_MODELS_SOURCE} (weighted from known-model usage)`,
+  source: `${CURSOR_MODELS_SOURCE} (weighted from known-model usage)`,
 }
 
 const rows = rawRows.map((row) => {
@@ -441,8 +485,8 @@ console.log(`Date range: ${days[0]?.[0]} to ${days.at(-1)?.[0]}`)
 console.log(`Total tokens: ${format.format(totals.total)}`)
 console.log(`Estimated total cost: ${money.format(totals.cost)}`)
 console.log(`Estimated cost / 1M tokens: ${money.format(costPerMillionTokens)}`)
-console.log(`Pricing source: ${OPENROUTER_MODELS_SOURCE}`)
-console.log("Fallback pricing: weighted blended rates for auto/composer aliases")
+console.log(`Pricing source: ${CURSOR_MODELS_SOURCE}`)
+console.log("Fallback pricing: weighted blended rates for unknown model aliases")
 console.log(`Cache read: ${format.format(totals.cacheRead)} (${Math.round(cacheEfficiency * 100)}% of reusable+fresh input)`)
 console.log(`Output tokens: ${format.format(totals.output)}`)
 console.log(`Peak day: ${peakDay?.[0]} with ${format.format(peakDay?.[1] ?? 0)} tokens`)
