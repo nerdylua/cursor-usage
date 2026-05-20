@@ -148,11 +148,30 @@ const modelPalette = [
   "var(--chart-4)",
 ]
 
+const CURSOR_EXPORT_START_DATE = 1704997800000
+const INDIA_TIME_ZONE = "Asia/Kolkata"
+
 function getCursorExportUrl() {
-  const today = new Date()
-  today.setHours(23, 59, 59, 999)
-  const endDate = today.getTime()
-  return `https://cursor.com/api/dashboard/export-usage-events-csv?startDate=1704997800000&endDate=${endDate}&strategy=tokens`
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: INDIA_TIME_ZONE,
+    year: "numeric",
+  }).formatToParts(new Date())
+  const dateParts = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  )
+  const endDate = Date.UTC(
+    Number(dateParts.year),
+    Number(dateParts.month) - 1,
+    Number(dateParts.day),
+    18,
+    29,
+    59,
+    999
+  )
+
+  return `https://cursor.com/api/dashboard/export-usage-events-csv?startDate=${CURSOR_EXPORT_START_DATE}&endDate=${endDate}&strategy=tokens`
 }
 
 function compactNumber(value: number) {
@@ -275,6 +294,12 @@ export function CursorUsageDashboard({
 }: {
   data: CursorUsageDashboardData
 }) {
+  function handleCursorExportClick(
+    event: React.MouseEvent<HTMLAnchorElement>
+  ) {
+    event.currentTarget.href = getCursorExportUrl()
+  }
+
   return (
     <TooltipProvider>
       <SidebarProvider>
@@ -375,7 +400,8 @@ export function CursorUsageDashboard({
                           variant="outline"
                         >
                           <a
-                            href={getCursorExportUrl()}
+                            href="#"
+                            onClick={handleCursorExportClick}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
